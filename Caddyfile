@@ -1,0 +1,65 @@
+panel.rajtech.me {
+        file_server
+
+        reverse_proxy 192.168.100.60
+
+        tls {
+                dns cloudflare {RAJ_CLOUDFLARE_API_TOKEN}
+        }
+}
+
+bpsapi.rajtech.me {
+        root * /var/www/bpsapi.rajtech.me/
+
+        # Define routes for static backends
+        handle_path /three/* {
+                rewrite * {path}
+                reverse_proxy http://three.nodes.rajtech.me:5641
+        }
+
+        handle_path /oracleone/* {
+                rewrite * {path}
+                reverse_proxy http://oracleone.nodes.rajtech.me:5001
+        }
+
+        # Give preference to the local server for circular images
+        route /circular-image/* {
+                reverse_proxy http://three.nodes.rajtech.me:5641 http://oracleone.nodes.rajtech.me:5001 {
+                        health_uri /
+                        lb_try_duration 5s
+                        lb_policy first
+
+                        @error status 500 502 503
+                        handle_response @error {
+                                reverse_proxy * http://oracleone.nodes.rajtech.me:5001
+                        }
+                }
+        }
+
+        # Give preference to the off-site server for the rest of the API
+        route /* {
+                file_server /docs*
+                reverse_proxy http://oracleone.nodes.rajtech.me:5001 http://three.nodes.rajtech.me:5641 {
+                        health_uri /
+                        lb_try_duration 5s
+                        lb_policy first
+
+                        @error status 500 502 503
+                        handle_response @error {
+                                reverse_proxy * http://three.nodes.rajtech.me:5641
+                        }
+                }
+        }
+
+        redir /v1 /
+
+        # Redirect /v1/* to /* (legacy api url)
+        handle_path /v1/* {
+                rewrite * {path}
+        }
+
+        # For SSL
+        tls {
+                dns cloudflare {RAJ_CLOUDFLARE_API_TOKEN}
+        }
+}
